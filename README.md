@@ -1,0 +1,144 @@
+# Stockroom — 備品管理 E2E デモ
+
+Spring Boot の REST API と、jQuery で DOM を生成する認証なしの備品管理アプリです。登録・入力チェック・検索・編集・削除を Playwright で検証できます。
+
+![備品管理画面](docs/inventory.png)
+
+## 使用技術
+
+- Spring Boot **4.1.1** / Java **17 以上**（動作確認環境: JDK 25）
+- jQuery **4.0.0 通常版**（Ajax を利用。CDN に依存せず同梱）
+- Playwright **1.64.1** / Node.js **22 以上**（動作確認環境: Node.js 24）
+- H2 Database / Spring JDBC / Bean Validation
+- Apache Maven **3.9.11**（Wrapper 同梱、Maven の事前インストール不要）
+
+2026-10-21 に Maven Central と npm の公開レジストリで安定版を確認して固定しています。Spring Boot の M/RC/SNAPSHOT 版は対象外です。
+
+## 初回セットアップ
+
+JDK と Node.js をインストールし、`JAVA_HOME` に JDK のディレクトリを設定してください。以下はプロジェクトルートで実行します。
+
+```powershell
+npm ci
+npx playwright install chromium
+```
+
+初回は npm、Maven Central、Playwright のダウンロード先に接続できる環境が必要です。社内ミラーを設定している場合は、そのミラーに各パッケージが存在することを確認してください。
+
+## アプリを起動
+
+```powershell
+npm start
+```
+
+[http://127.0.0.1:8080](http://127.0.0.1:8080) を開きます。終了は `Ctrl+C`。初回は Wrapper と Maven 依存関係の取得に時間がかかります。
+
+通常起動では `data/equipment.mv.db` に保存されます。ページの再読み込みやアプリの再起動後もデータが残ります。空の DB で起動するとサンプル備品を3件登録します。
+
+## E2E テスト
+
+```powershell
+npm run test:e2e
+```
+
+アプリを手動起動する必要はありません。Playwright が `e2e` プロファイルで Spring Boot を **18765 番ポート**に起動し、終了時に停止します。通常起動の 8080 番ポートとは共存できます。18765 番は空けておいてください。
+
+```powershell
+# ブラウザを表示して実行
+npm run test:e2e:headed
+
+# UI モードでステップを確認
+npm run test:e2e:ui
+
+# HTML レポートを開く
+npm run test:report
+
+# 3種類のブラウザで実行
+npx playwright install chromium firefox webkit
+npm run test:e2e:all
+```
+
+失敗時には `test-results/` にスクリーンショット・動画・トレースが残ります。HTML レポートから確認できます。
+
+```powershell
+# トレースを直接開く場合（実際のパスに置換）
+npx playwright show-trace test-results/<テスト名>/trace.zip
+```
+
+## 検証する振る舞い
+
+1. 初期一覧、名前検索、カテゴリ絞り込み、該当なし、検索条件クリア
+2. 未入力・負数・小数・上限超過・数量未入力のエラーと未登録
+3. 登録 → 検索 → 数量・状態の編集 → 再読み込みで保存確認 → 削除キャンセル → 削除 → 該当なし
+4. 編集キャンセルと数量ゼロの登録
+5. 一覧取得失敗と再試行
+6. 保存失敗時の入力保持と再送
+7. HTML を含む備品名を文字列として表示
+8. API 側の入力検証と存在しない ID の404
+
+成功系は実際の Spring Boot API と H2 に接続します。障害系2件だけ Playwright の `page.route()` で HTTP エラーを再現します。固定時間の sleep は使わず、画面の期待状態を `expect` で待ちます。
+
+## テストデータと構成
+
+- 通常: ファイル DB。認証なし、ループバックで待ち受けます。
+- E2E: 別のインメモリ DB。各テスト前に `POST /api/test/reset` でサンプル3件に戻します。この API は `e2e` プロファイル限定です。
+- DB を共有しているため `workers: 1` に固定しています。各テストは実行順に依存せず、単独実行できます。
+- `index.html` は `#app` とアセット読み込みのみ。画面要素は `app.js` の jQuery で生成します。
+- 利用者の入力は `.text()` / `.val()` で扱います。
+- 登録・更新・削除は Ajax → REST API → JDBC → H2 の順に処理します。
+
+```text
+src/main/java/com/example/equipment/   API・DB・初期データ・E2E専用リセット
+src/main/resources/static/            HTML・jQuery DOM構築・CSS・jQuery本体
+tests/e2e/equipment.spec.js            画面の受け入れテストとAPI検証
+playwright.config.js                  起動・ブラウザ・レポート設定
+scripts/                             OS共通起動とjQueryコピー
+```
+
+## TDD の進め方
+
+t_wada さんの TDD で重視される Red → Green → Refactor のサイクルで、観測可能な振る舞いをテストにします。初期コミットは起動/API の土台と、画面実装前の受け入れテストです。
+
+機能を追加するときは、まず1つの小さい期待をテストに書き、そのテストが意図した理由で失敗することを確認します。その後、その期待を満たす実装を加えます。成功したら重複を整理し、テストを再実行します。
+
+```powershell
+# 1ケースだけ実行して Red / Green を確認
+npm run test:e2e -- --grep '初期データ'
+
+# 変更後に全ケースを実行
+npm run test:e2e
+```
+
+## JAR で実行
+
+```powershell
+npm ci
+.\mvnw.cmd package
+java -jar target/equipment-demo-1.0.0.jar
+```
+
+macOS / Linux は Maven コマンドを `sh ./mvnw package` に置き換えてください。`npm start` と Playwright の npm コマンドは共通です。`mvnw package` 単体では E2E は実行されません。
+
+## 実行確認結果
+
+2026-10-21、Windows / JDK 25 / Node.js 24 で確認しました。
+
+| 検証 | 結果 |
+| --- | --- |
+| Chromium | 8 / 8 成功 |
+| WebKit | 8 / 8 成功 |
+| Firefox | ブラウザ起動前に環境エラー。機能検証は未完了 |
+| 通常起動のトップページ | HTTP 200・目視確認済み |
+| 通常起動のテスト専用リセット API | HTTP 404 |
+
+Firefox は Playwright から `spawn UNKNOWN`、実行ファイルの直接起動でも Windows の「サイド バイ サイド構成が正しくない」エラーになりました。OS のランタイム環境を修復した後に `npx playwright test --project=firefox` で再検証してください。ブラウザ起動を含む `test:e2e:all` は、この環境では終了コード1になります。通常の `test:e2e` は Chromium のみを実行します。
+
+開発中に確認した Red → Green → Refactor の記録は [docs/tdd.md](docs/tdd.md) にあります。
+
+## 公式情報
+
+- [Spring Boot](https://spring.io/projects/spring-boot/)
+- [jQuery のダウンロード](https://jquery.com/download/)
+- [Playwright の Web Server 設定](https://playwright.dev/docs/test-webserver)
+
+jQuery は MIT ライセンスです。ライセンスは `THIRD-PARTY-NOTICES.txt` を参照してください。Maven Wrapper は Apache License 2.0 です（スクリプト内に表記）。

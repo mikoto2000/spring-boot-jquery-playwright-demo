@@ -13,6 +13,10 @@ jQuery(function ($) {
   function labeled(label, field) {
     return element('div', '', { class: 'field' }).append(element('label', label, { for: field.attr('id') }), field);
   }
+  function setBusy(dialog, busy) {
+    dialog.attr('aria-busy', String(busy));
+    dialog.find('input, select, button').prop('disabled', busy);
+  }
 
   let equipment = [];
   const main = element('main', '', { class: 'workspace' });
@@ -112,8 +116,7 @@ jQuery(function ($) {
       return;
     }
     saving = true;
-    save.prop('disabled', true);
-    cancelEditor.prop('disabled', true);
+    setBusy(editor, true);
     try {
       const response = await $.ajax({
         url: '/api/equipment' + (editingId === null ? '' : '/' + editingId),
@@ -127,8 +130,7 @@ jQuery(function ($) {
       formFailure.text('保存できませんでした。入力内容を確認し、もう一度お試しください。');
     } finally {
       saving = false;
-      save.prop('disabled', false);
-      cancelEditor.prop('disabled', false);
+      setBusy(editor, false);
     }
   });
 
@@ -155,8 +157,7 @@ jQuery(function ($) {
   async function removeEquipment() {
     if (removing) return;
     removing = true;
-    confirmDelete.prop('disabled', true);
-    cancelDelete.prop('disabled', true);
+    setBusy(deleteDialog, true);
     deleteFailure.empty();
     try {
       await $.ajax({ url: '/api/equipment/' + deleting.id, method: 'DELETE' });
@@ -167,8 +168,7 @@ jQuery(function ($) {
       deleteFailure.text('削除できませんでした。もう一度お試しください。');
     } finally {
       removing = false;
-      confirmDelete.prop('disabled', false);
-      cancelDelete.prop('disabled', false);
+      setBusy(deleteDialog, false);
     }
   }
 
