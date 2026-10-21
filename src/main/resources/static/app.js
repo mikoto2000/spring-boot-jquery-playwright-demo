@@ -28,6 +28,7 @@ jQuery(function ($) {
     element('div').append(element('h1', '備品管理'), element('p', 'オフィスの備品を、ひとつの場所で。', { class: 'muted' }))
   );
   main.append(heading);
+  heading.append(button('備品を登録', () => openEditor(), 'button primary'));
   const announcement = element('div', '', { role: 'status', class: 'notice' });
   const failure = element('div', '', { role: 'alert', class: 'notice error' });
   const stats = element('section', '', { class: 'stats', 'aria-label': '備品の集計' });
@@ -45,6 +46,91 @@ jQuery(function ($) {
   const loading = element('p', '備品を読み込み中…', { role: 'status', class: 'loading' });
   main.append(announcement, failure, stats, element('section', '', { class: 'panel', 'aria-label': '備品一覧と検索' }).append(toolbar, loading, element('div', '', { class: 'table-scroll' }).append(table), empty));
   main.append(element('footer', 'Stockroom · Spring Boot + jQuery', { class: 'footer' }));
+
+  const editor = element('dialog', '', { 'aria-labelledby': 'editor-title' });
+  const editorTitle = element('h2', '', { id: 'editor-title' });
+  const form = element('form', '', { novalidate: true });
+  const nameInput = element('input', '', { id: 'equipment-name', maxlength: 80, autocomplete: 'off' });
+  const categoryInput = select('equipment-category', categories, '選択してください');
+  const quantityInput = element('input', '', { id: 'equipment-quantity', type: 'number', min: 0, max: 9999, step: 1 });
+  const statusInput = select('equipment-status', ['利用可能', '貸出中']);
+  const formFailure = element('div', '', { role: 'alert', class: 'notice error' });
+  const fields = { name: nameInput, category: categoryInput, quantity: quantityInput, status: statusInput };
+  const fieldErrors = {};
+  for (const [key, label] of Object.entries({ name: '備品名', category: 'カテゴリ', quantity: '数量', status: '状態' })) {
+    const errorId = 'error-' + key;
+    fields[key].attr('aria-describedby', errorId);
+    fieldErrors[key] = element('span', '', { id: errorId, class: 'field-error' });
+    form.append(labeled(label, fields[key]).append(fieldErrors[key]));
+  }
+  const cancelEditor = button('キャンセル', () => editor[0].close());
+  const save = element('button', '登録する', { type: 'submit', class: 'button primary' });
+  form.append(formFailure, element('div', '', { class: 'dialog-actions' }).append(cancelEditor, save));
+  editor.append(editorTitle, element('p', '備品の情報を入力してください。', { class: 'dialog-description' }), form);
+  $('#app').append(editor);
+  let editingId = null;
+  let saving = false;
+
+  function clearErrors() {
+    formFailure.empty();
+    Object.keys(fields).forEach(key => { fieldErrors[key].empty(); fields[key].removeAttr('aria-invalid'); });
+  }
+
+  function openEditor(item) {
+    editingId = item?.id ?? null;
+    editorTitle.text(item ? '備品の編集' : '備品の登録');
+    save.text(item ? '更新する' : '登録する');
+    nameInput.val(item?.name ?? '');
+    categoryInput.val(item?.category ?? '');
+    quantityInput.val(item?.quantity ?? 1);
+    statusInput.val(item?.status ?? '利用可能');
+    clearErrors();
+    editor[0].showModal();
+    nameInput.trigger('focus');
+  }
+
+  editor.on('cancel', event => { if (saving) event.preventDefault(); });
+  form.on('submit', async event => {
+    event.preventDefault();
+    if (saving) return;
+    clearErrors();
+    const input = {
+      name: String(nameInput.val()).trim(), category: categoryInput.val(),
+      quantity: Number(quantityInput.val()), status: statusInput.val()
+    };
+    const errors = {};
+    if (!input.name) errors.name = '備品名を入力してください';
+    else if (input.name.length > 80) errors.name = '備品名は80文字以内で入力してください';
+    if (!categories.includes(input.category)) errors.category = 'カテゴリを選択してください';
+    if (quantityInput.val() === '' || !Number.isInteger(input.quantity) || input.quantity < 0 || input.quantity > 9999) errors.quantity = '数量は0〜9999の整数で入力してください';
+    if (Object.keys(errors).length) {
+      Object.entries(errors).forEach(([key, message]) => {
+        fieldErrors[key].text(message);
+        fields[key].attr('aria-invalid', 'true');
+      });
+      fields[Object.keys(errors)[0]].trigger('focus');
+      return;
+    }
+    saving = true;
+    save.prop('disabled', true);
+    cancelEditor.prop('disabled', true);
+    try {
+      const response = await $.ajax({
+        url: '/api/equipment' + (editingId === null ? '' : '/' + editingId),
+        method: editingId === null ? 'POST' : 'PUT',
+        contentType: 'application/json', data: JSON.stringify(input)
+      });
+      editor[0].close();
+      announcement.text(response.message);
+      await load();
+    } catch {
+      formFailure.text('保存できませんでした。入力内容を確認し、もう一度お試しください。');
+    } finally {
+      saving = false;
+      save.prop('disabled', false);
+      cancelEditor.prop('disabled', false);
+    }
+  });
 
   function render() {
     const query = String(search.val()).trim().toLocaleLowerCase();
