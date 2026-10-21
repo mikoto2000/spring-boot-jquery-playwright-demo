@@ -53,7 +53,7 @@ npm run test:e2e
 npm run test:e2e:headed
 ```
 
-Chromium のブラウザを表示しながら、全8件のテストを自動実行します。このモードでも Spring Boot は自動起動します。操作は自動で進み、テスト終了時にブラウザは閉じます。
+Chromium のブラウザを表示しながら、全12件のテストを自動実行します。このモードでも Spring Boot は自動起動します。操作は自動で進み、テスト終了時にブラウザは閉じます。
 
 ### UI モードでテスト結果や操作履歴を確認
 
@@ -155,7 +155,7 @@ Chromium・Firefox・WebKit で同じテストを実行します。Firefox の�
 - `main` ブランチを対象とする Pull Request の作成・更新
 - Actions 画面からの手動実行（`Run workflow`）
 
-Ubuntu 24.04 / Temurin JDK 25 / Node.js 24 で依存関係とブラウザをインストールし、Spring Boot をビルドした後に `npm run test:e2e:all` を実行します。Chromium・Firefox・WebKit で各8件、計24件を検証します。Spring Boot のテスト用サーバーは Playwright が自動起動・停止します。追加の Secrets 設定は不要です。
+Ubuntu 24.04 / Temurin JDK 25 / Node.js 24 で依存関係とブラウザをインストールし、`mvnw package` で DB の結合テスト6件とビルドを実行した後に `npm run test:e2e:all` を実行します。Chromium・Firefox・WebKit で各12件、計36件を検証します。Spring Boot のテスト用サーバーは Playwright が自動起動・停止します。追加の Secrets 設定は不要です。
 
 CI では既存設定により、テストを1ワーカーで実行し、失敗時は1回リトライします。同じブランチの新しい実行が始まると、古い実行はキャンセルします。
 
@@ -181,6 +181,8 @@ HTML レポートでテストを選ぶと、各ステップのスクリーンシ
 
 レポートはテスト成功時・失敗時ともにアップロードし、**14日間**保存します。失敗時は途中まで成功したステップの画像と、失敗時画像・動画・トレースもレポートから確認できます。依存関係のインストールやビルドの失敗でテストを開始できなかった場合はレポートが生成されないため、ジョブログを確認してください。キャンセルされた実行のアップロードはスキップします。
 
+DB 結合テストの結果は、別の **database-test-reports** アーティファクトに14日間保存します。`target/surefire-reports/` の XML・テキストが含まれます。DB 結合テストが失敗すると後続の E2E は実行されませんが、生成済みの DB テスト結果はアップロードします。
+
 ### 手動実行
 
 **Actions → Playwright E2E → Run workflow** でブランチを選び、実行できます。GitHub CLI を使う場合は次のコマンドでも実行できます。
@@ -204,8 +206,46 @@ npx playwright show-report ./downloaded-report
 6. 保存失敗時の入力保持と再送
 7. HTML を含む備品名を文字列として表示
 8. API 側の入力検証と存在しない ID の404
+9. 登録失敗時の入力保持・操作復帰・キャンセル・DB と集計の不変・再試行
+10. 更新失敗時の入力保持・操作復帰・キャンセル・DB と集計の不変・再試行
+11. 削除失敗時の操作復帰・キャンセル・DB と集計の不変・再試行
+12. 削除成功後に一覧取得が失敗した場合、削除済みの行と集計を更新し、再取得できること
 
-成功系は実際の Spring Boot API と H2 に接続します。障害系2件だけ Playwright の `page.route()` で HTTP エラーを再現します。固定時間の sleep は使わず、画面の期待状態を `expect` で待ちます。
+成功系は実際の Spring Boot API と H2 に接続します。障害系では Playwright の `page.route()` で HTTP 500 / 503 を再現し、`request.get()` で実サーバーの全レコードを比較します。登録・更新・削除の失敗テストは、エラー表示、ボタンの再有効化、キャンセル後と再読み込み後の一覧・集計、再試行成功後の保存結果まで確認します。固定時間の sleep は使わず、画面の期待状態を `expect` で待ちます。
+
+```powershell
+# 登録・更新・削除の失敗と、削除後の一覧取得失敗を実行
+npm run test:e2e -- tests/e2e/write-failures.spec.js
+```
+
+## DB ロールバックの結合テスト
+
+```powershell
+# Windows: 全 Java テスト（現在6件）
+.\mvnw.cmd test
+
+# ロールバックを確認するクラスだけを実行
+.\mvnw.cmd "-Dtest=EquipmentRollbackTest" test
+
+# macOS / Linux
+sh ./mvnw test
+```
+
+`EquipmentRollbackTest` は Spring の実際の `EquipmentRepository` と独立したインメモリ H2 に接続し、次の6ケースを検証します。
+
+| 操作 | SQL 実行後の障害 | 正常終了 |
+| --- | --- | --- |
+| 登録 | 追加した行が残らず、元の全レコードと一致 | 新しい行が保存される |
+| 更新 | 名前・カテゴリ・数量・状態を含め、元の全レコードと一致 | 更新内容が保存される |
+| 削除 | 削除した行が復元され、元の全レコードと一致 | 対象行だけが削除される |
+
+障害はテスト専用の DataSource ラッパーで注入します。実際の `INSERT` / `UPDATE` / `DELETE` が1行を書き換えた**直後、コミット前**に `SQLException` を投げます。Repository の `@Transactional` によるロールバック後、別の接続で全レコードが操作前と一致することを確認します。障害発生時の `autoCommit=false` と、正常時にコミットされることも検証します。
+
+テストメソッドには `@Transactional` を付けていません。テスト側のトランザクションでアプリ側の境界不足を隠さないためです。障害注入コードは `src/test/` のみで、アプリの JAR に含まれず、本番向けの障害用 API やスイッチも追加していません。
+
+Playwright の HTTP エラーモックは画面の失敗処理を確認します。実際の SQL 実行と DB ロールバックは、この結合テストで確認します。DB コミット後の通信断による応答喪失は検証対象外で、画面からエラーが見えただけでは DB が戻ったとは判断できません。
+
+`mvnw test` / `mvnw package` では結合テストを実行し、`test-results/` に生成される Playwright の画像とは別に、`target/surefire-reports/` に結果を保存します。Playwright の npm コマンド単体では Java 結合テストは実行しません。
 
 ## テストデータと構成
 
@@ -220,7 +260,9 @@ npx playwright show-report ./downloaded-report
 src/main/java/com/example/equipment/   API・DB・初期データ・E2E専用リセット
 src/main/resources/static/            HTML・jQuery DOM構築・CSS・jQuery本体
 tests/e2e/equipment.spec.js            画面の受け入れテストとAPI検証
+tests/e2e/write-failures.spec.js       登録・更新・削除の失敗と再試行
 tests/e2e/helpers/screenshot-step.js   検証後の画面撮影とステップへの添付
+src/test/java/com/example/equipment/  実DBのコミット・ロールバック検証
 playwright.config.js                  起動・ブラウザ・レポート設定
 scripts/                             OS共通起動とjQueryコピー
 ```
@@ -262,6 +304,8 @@ macOS / Linux は Maven コマンドを `sh ./mvnw package` に置き換えて�
 | 通常起動のテスト専用リセット API | HTTP 404 |
 
 ステップ画像の追加後も Chromium・WebKit の計16テストが成功しました。1ブラウザあたり40枚、合計80枚の PNG がステップに添付されていることを確認し、HTML レポートでの画像表示も目視確認しています。
+
+2026-10-22 に失敗時テストと DB 結合テストを追加し、Windows で DB 結合テスト6件、Chromium・WebKit の E2E 計24件（各12件）の成功を確認しました。CI は DB 結合テスト6件と3ブラウザの E2E 計36件を実行する構成です。
 
 Firefox は Playwright から `spawn UNKNOWN`、実行ファイルの直接起動でも Windows の「サイド バイ サイド構成が正しくない」エラーになりました。OS のランタイム環境を修復した後に `npx playwright test --project=firefox` で再検証してください。ブラウザ起動を含む `test:e2e:all` は、この環境では終了コード1になります。通常の `test:e2e` は Chromium のみを実行します。
 

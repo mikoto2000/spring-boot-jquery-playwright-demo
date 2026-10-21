@@ -161,6 +161,8 @@ jQuery(function ($) {
     deleteFailure.empty();
     try {
       await $.ajax({ url: '/api/equipment/' + deleting.id, method: 'DELETE' });
+      equipment = equipment.filter(item => item.id !== deleting.id);
+      render();
       deleteDialog[0].close();
       announcement.text('備品を削除しました');
       await load();

@@ -18,16 +18,19 @@ public class EquipmentRepository implements ApplicationRunner {
         return db.sql("SELECT * FROM equipment ORDER BY id").query(Equipment.class).list();
     }
 
+    @Transactional
     public void insert(EquipmentController.EquipmentInput input) {
         db.sql("INSERT INTO equipment(name, category, quantity, status) VALUES (?, ?, ?, ?)")
             .params(input.name().strip(), input.category(), input.quantity(), input.status()).update();
     }
 
+    @Transactional
     public boolean update(long id, EquipmentController.EquipmentInput input) {
         return db.sql("UPDATE equipment SET name=?, category=?, quantity=?, status=? WHERE id=?")
             .params(input.name().strip(), input.category(), input.quantity(), input.status(), id).update() > 0;
     }
 
+    @Transactional
     public boolean delete(long id) {
         return db.sql("DELETE FROM equipment WHERE id=?").param(id).update() > 0;
     }
