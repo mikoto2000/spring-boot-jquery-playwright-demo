@@ -1,9 +1,11 @@
 package com.example.equipment;
 
 import java.util.List;
+import java.util.Objects;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,9 +21,11 @@ public class EquipmentRepository implements ApplicationRunner {
     }
 
     @Transactional
-    public void insert(EquipmentController.EquipmentInput input) {
+    public Equipment insert(EquipmentController.EquipmentInput input) {
+        var keys = new GeneratedKeyHolder();
         db.sql("INSERT INTO equipment(name, category, quantity, status) VALUES (?, ?, ?, ?)")
-            .params(input.name().strip(), input.category(), input.quantity(), input.status()).update();
+            .params(input.name().strip(), input.category(), input.quantity(), input.status()).update(keys, "id");
+        return input.toEquipment(Objects.requireNonNull(keys.getKey(), "Missing generated equipment ID").longValue());
     }
 
     @Transactional

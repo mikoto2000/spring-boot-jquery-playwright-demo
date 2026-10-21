@@ -123,6 +123,9 @@ jQuery(function ($) {
         method: editingId === null ? 'POST' : 'PUT',
         contentType: 'application/json', data: JSON.stringify(input)
       });
+      const saved = response.equipment;
+      equipment = [...equipment.filter(item => item.id !== saved.id), saved].sort((a, b) => a.id - b.id);
+      render();
       editor[0].close();
       announcement.text(response.message);
       await load();

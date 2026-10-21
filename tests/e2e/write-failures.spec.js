@@ -169,8 +169,12 @@ for (const [operation, method, submitLabel] of [['登録', 'POST', '登録する
     });
     await screenshotStep(page, '一覧再取得後も値・ID・件数が変わらず、重複登録されない', async () => {
       blockList = false;
+      const refreshed = page.waitForResponse(response => response.request().method() === 'GET'
+        && new URL(response.url()).pathname === '/api/equipment' && response.status() === 200);
       await page.getByRole('button', { name: '再試行', exact: true }).click();
-      await expect(page.getByRole('alert')).toBeEmpty();
+      await refreshed;
+      await expect(page.getByText('備品を読み込み中…', { exact: true })).not.toBeVisible();
+      await expect(page.getByRole('alert')).not.toBeVisible();
       await expectSavedView();
       expect(await (await request.get('/api/equipment')).json()).toEqual(persisted);
       expect(writes).toBe(1);
