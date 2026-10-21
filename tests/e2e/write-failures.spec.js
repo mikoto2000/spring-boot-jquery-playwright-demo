@@ -109,6 +109,81 @@ for (const [operation, method, submitLabel] of [['登録', 'POST', '登録する
   });
 }
 
+for (const [operation, method, submitLabel] of [['登録', 'POST', '登録する'], ['更新', 'PUT', '更新する']]) {
+  test(`${operation}成功後に一覧取得が失敗しても保存済みの値と集計を表示し、再取得できる`, async ({ page, request }) => {
+    const before = await (await request.get('/api/equipment')).json();
+    let committed = false;
+    let blockList = true;
+    let writes = 0;
+    let writeResponse;
+    let persisted;
+    await page.route(apiPattern, async route => {
+      if (route.request().method() === method) {
+        writes++;
+        const response = await route.fetch();
+        expect(response.status()).toBe(operation === '登録' ? 201 : 200);
+        writeResponse = await response.json();
+        committed = true;
+        return route.fulfill({ response });
+      }
+      if (route.request().method() === 'GET' && committed && blockList) {
+        return route.fulfill({ status: 503, json: { message: 'list temporarily unavailable' } });
+      }
+      return route.continue();
+    });
+    const expectedStats = operation === '登録' ? ['4', '17', '2'] : ['3', '14', '2'];
+    const stats = page.getByRole('region', { name: '備品の集計' }).locator('strong');
+    async function expectSavedView() {
+      const savedRow = row(page, replacementName);
+      for (const value of [replacementName, 'その他', '7', '貸出中']) {
+        await expect(savedRow.getByRole('cell', { name: value, exact: true })).toBeVisible();
+      }
+      await expect(page.getByRole('row')).toHaveCount(operation === '登録' ? 5 : 4);
+      await expect(stats).toHaveText(expectedStats);
+      if (operation === '更新') await expect(row(page, '会議室モニター')).toHaveCount(0);
+    }
+    await screenshotStep(page, `${operation}フォームに入力`, async () => {
+      await openMutation(page, operation);
+    });
+    await screenshotStep(page, `${operation}成功と一覧取得失敗を区別して表示`, async () => {
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('button', { name: submitLabel, exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: `備品を${operation}しました` })).toBeVisible();
+      await expect(page.getByRole('alert')).toContainText('備品を取得できませんでした');
+      await expectSavedView();
+      persisted = await (await request.get('/api/equipment')).json();
+      const saved = persisted.find(equipment => equipment.name === replacementName);
+      expect(writeResponse.equipment).toEqual(saved);
+      expect(saved).toMatchObject({ category: 'その他', quantity: 7, status: '貸出中' });
+      const previous = before.find(equipment => equipment.name === '会議室モニター');
+      if (operation === '更新') expect(saved.id).toBe(previous.id);
+      expect(persisted.filter(equipment => equipment.id !== saved.id)).toEqual(operation === '登録' ? before : before.filter(equipment => equipment.id !== previous.id));
+      expect(writes).toBe(1);
+    });
+    await screenshotStep(page, '一覧取得が再度失敗しても保存を再送せず、値を保持', async () => {
+      await page.getByRole('button', { name: '再試行', exact: true }).click();
+      await expect(page.getByRole('alert')).toContainText('備品を取得できませんでした');
+      await expectSavedView();
+      expect(writes).toBe(1);
+    });
+    await screenshotStep(page, '一覧再取得後も値・ID・件数が変わらず、重複登録されない', async () => {
+      blockList = false;
+      await page.getByRole('button', { name: '再試行', exact: true }).click();
+      await expect(page.getByRole('alert')).toBeEmpty();
+      await expectSavedView();
+      expect(await (await request.get('/api/equipment')).json()).toEqual(persisted);
+      expect(writes).toBe(1);
+    });
+    await screenshotStep(page, '再読み込み後も保存結果が残る', async () => {
+      await page.reload();
+      await expectSavedView();
+      expect(await (await request.get('/api/equipment')).json()).toEqual(persisted);
+      expect(writes).toBe(1);
+    });
+  });
+}
+
 test('削除成功後に一覧取得が失敗しても削除済みの備品を表示せず、再取得できる', async ({ page, request }) => {
   let deleted = false;
   await page.route('**/api/equipment/*', async route => {
