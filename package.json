@@ -1,0 +1,17 @@
+{
+  "name": "equipment-e2e-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-jquery.mjs",
+    "start": "node scripts/start.mjs",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:headed": "playwright test --project=chromium --headed",
+    "test:e2e:ui": "playwright test --project=chromium --ui",
+    "test:e2e:all": "playwright test --project=chromium --project=firefox --project=webkit",
+    "test:report": "playwright show-report"
+  },
+  "dependencies": { "jquery": "4.0.0" },
+  "devDependencies": { "@playwright/test": "1.64.1" }
+}
