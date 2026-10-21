@@ -37,25 +37,54 @@ npm start
 
 ## E2E テスト
 
+以下のコマンドは、すべてプロジェクトルートで実行します。
+
+### 通常実行（ブラウザ非表示）
+
 ```powershell
 npm run test:e2e
 ```
 
 アプリを手動起動する必要はありません。Playwright が `e2e` プロファイルで Spring Boot を **18765 番ポート**に起動し、終了時に停止します。通常起動の 8080 番ポートとは共存できます。18765 番は空けておいてください。
 
+### ブラウザを表示して実行
+
 ```powershell
-# ブラウザを表示して実行
 npm run test:e2e:headed
+```
 
-# UI モードでステップを確認
+Chromium のブラウザを表示しながら、全8件のテストを自動実行します。このモードでも Spring Boot は自動起動します。操作は自動で進み、テスト終了時にブラウザは閉じます。
+
+### UI モードでテスト結果や操作履歴を確認
+
+```powershell
 npm run test:e2e:ui
+```
 
-# HTML レポートを開く
+Playwright の UI が開きます。左側の一覧からテストを選び、実行ボタンで開始してください。実行後は各操作のスナップショットやログを確認できます。終了するときはターミナルで `Ctrl+C` を押します。
+
+### デバッガーで1操作ずつ実行
+
+```powershell
+# ブラウザと Playwright Inspector を表示して全テストを実行
+npm run test:e2e -- --debug
+
+# 登録 → 検索 → 編集 → 削除のシナリオだけを実行
+npm run test:e2e -- --debug --grep "登録 →"
+```
+
+Playwright Inspector の「Step over」で操作を1つずつ進め、「Resume」で実行を再開できます。画面の変化をゆっくり確認したい場合や、失敗箇所を調べたい場合に利用してください。
+
+`--` より後ろの引数は Playwright に渡されます。`--grep` はテスト名に一致するものだけを実行するオプションで、ブラウザ表示モードにも付けられます。
+
+```powershell
+npm run test:e2e:headed -- --grep "登録 →"
+```
+
+### レポートと失敗時の記録
+
+```powershell
 npm run test:report
-
-# 3種類のブラウザで実行
-npx playwright install chromium firefox webkit
-npm run test:e2e:all
 ```
 
 失敗時には `test-results/` にスクリーンショット・動画・トレースが残ります。HTML レポートから確認できます。
@@ -64,6 +93,15 @@ npm run test:e2e:all
 # トレースを直接開く場合（実際のパスに置換）
 npx playwright show-trace test-results/<テスト名>/trace.zip
 ```
+
+### 3種類のブラウザで実行
+
+```powershell
+npx playwright install chromium firefox webkit
+npm run test:e2e:all
+```
+
+Chromium・Firefox・WebKit で同じテストを実行します。Firefox のこの環境での起動制約は「実行確認結果」を参照してください。
 
 ## 検証する振る舞い
 
