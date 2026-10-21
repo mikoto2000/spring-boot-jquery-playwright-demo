@@ -81,13 +81,55 @@ Playwright Inspector の「Step over」で操作を1つずつ進め、「Resume�
 npm run test:e2e:headed -- --grep "登録 →"
 ```
 
-### レポートと失敗時の記録
+### ステップごとのスクリーンショットと HTML レポート
+
+画面テストは `test.step()` で操作と検証を区切り、各ステップの検証成功後にページ全体の PNG を撮影します。`step.attach()` でステップに添付するため、成功したテストの画面も HTML レポートに残ります。撮影はブラウザ非表示・表示ありのどちらでも行います。
+
+```powershell
+# テストを実行してレポートと画像を生成
+npm run test:e2e
+
+# HTML レポートを開く
+npm run test:report
+```
+
+レポートでテスト名を選び、「Test Steps」のステップを展開すると、そのステップに添付された画像を開けます。初期一覧の画像は「Before Hooks」内の「初期一覧を表示」にあります。
+
+メインのデモシナリオでは、次の12場面を記録します。
+
+1. 初期一覧
+2. 登録フォーム入力後
+3. 登録後の一覧
+4. 登録した備品の検索結果
+5. 編集フォーム入力後
+6. 更新後の一覧
+7. 再読み込み後の保存確認
+8. 削除確認ダイアログ
+9. 削除キャンセル後
+10. 削除後の一覧
+11. 削除した備品の検索結果（該当なし）
+12. 再読み込み後の削除確認
+
+ほかの画面テストでも、未入力・不正数量のエラー、取得失敗からの復旧、保存失敗時の入力保持と再送などを記録します。API のステータスコードだけを確認するステップには画像を添付しません（共通の初期一覧表示は記録します）。
+
+共通処理は `tests/e2e/helpers/screenshot-step.js` にあります。新しい画面ステップを追加するときは、操作と `expect` を `screenshotStep()` のコールバック内に書きます。
+
+```javascript
+await screenshotStep(page, '備品名で検索', async () => {
+  await page.getByLabel('備品名で検索').fill('モニター');
+  await expect(page.getByRole('row')).toHaveCount(2);
+});
+```
+
+画像はテスト実行ごとに生成され、HTML レポートは `playwright-report/` に保存されます。レポートを共有するときは、画像を含むフォルダ全体を渡してください。これらの生成物は Git の対象外です。
+
+### 失敗時の記録
 
 ```powershell
 npm run test:report
 ```
 
-失敗時には `test-results/` にスクリーンショット・動画・トレースが残ります。HTML レポートから確認できます。
+ステップの操作や検証が失敗した場合、成功時のステップ画像は作成されません。代わりに、既存の `screenshot: 'only-on-failure'` による失敗時画像がテストに添付されます。`test-results/` には失敗時のスクリーンショット・動画・トレースが残り、HTML レポートから確認できます。
 
 ```powershell
 # トレースを直接開く場合（実際のパスに置換）
@@ -129,6 +171,7 @@ Chromium・Firefox・WebKit で同じテストを実行します。Firefox の�
 src/main/java/com/example/equipment/   API・DB・初期データ・E2E専用リセット
 src/main/resources/static/            HTML・jQuery DOM構築・CSS・jQuery本体
 tests/e2e/equipment.spec.js            画面の受け入れテストとAPI検証
+tests/e2e/helpers/screenshot-step.js   検証後の画面撮影とステップへの添付
 playwright.config.js                  起動・ブラウザ・レポート設定
 scripts/                             OS共通起動とjQueryコピー
 ```
@@ -168,6 +211,8 @@ macOS / Linux は Maven コマンドを `sh ./mvnw package` に置き換えて�
 | Firefox | ブラウザ起動前に環境エラー。機能検証は未完了 |
 | 通常起動のトップページ | HTTP 200・目視確認済み |
 | 通常起動のテスト専用リセット API | HTTP 404 |
+
+ステップ画像の追加後も Chromium・WebKit の計16テストが成功しました。1ブラウザあたり40枚、合計80枚の PNG がステップに添付されていることを確認し、HTML レポートでの画像表示も目視確認しています。
 
 Firefox は Playwright から `spawn UNKNOWN`、実行ファイルの直接起動でも Windows の「サイド バイ サイド構成が正しくない」エラーになりました。OS のランタイム環境を修復した後に `npx playwright test --project=firefox` で再検証してください。ブラウザ起動を含む `test:e2e:all` は、この環境では終了コード1になります。通常の `test:e2e` は Chromium のみを実行します。
 
