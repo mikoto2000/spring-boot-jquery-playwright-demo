@@ -132,6 +132,46 @@ jQuery(function ($) {
     }
   });
 
+  const deleteDialog = element('dialog', '', { 'aria-labelledby': 'delete-title' });
+  const deleteMessage = element('p', '', { class: 'dialog-description' });
+  const deleteFailure = element('div', '', { role: 'alert', class: 'notice error' });
+  const cancelDelete = button('キャンセル', () => deleteDialog[0].close());
+  const confirmDelete = button('削除する', removeEquipment, 'button danger');
+  deleteDialog.append(element('h2', '備品の削除', { id: 'delete-title' }), deleteMessage, deleteFailure,
+    element('div', '', { class: 'dialog-actions' }).append(cancelDelete, confirmDelete));
+  $('#app').append(deleteDialog);
+  let deleting = null;
+  let removing = false;
+  deleteDialog.on('cancel', event => { if (removing) event.preventDefault(); });
+
+  function openDelete(item) {
+    deleting = item;
+    deleteMessage.text('「' + item.name + '」を削除します。この操作は取り消せません。');
+    deleteFailure.empty();
+    deleteDialog[0].showModal();
+    cancelDelete.trigger('focus');
+  }
+
+  async function removeEquipment() {
+    if (removing) return;
+    removing = true;
+    confirmDelete.prop('disabled', true);
+    cancelDelete.prop('disabled', true);
+    deleteFailure.empty();
+    try {
+      await $.ajax({ url: '/api/equipment/' + deleting.id, method: 'DELETE' });
+      deleteDialog[0].close();
+      announcement.text('備品を削除しました');
+      await load();
+    } catch {
+      deleteFailure.text('削除できませんでした。もう一度お試しください。');
+    } finally {
+      removing = false;
+      confirmDelete.prop('disabled', false);
+      cancelDelete.prop('disabled', false);
+    }
+  }
+
   function render() {
     const query = String(search.val()).trim().toLocaleLowerCase();
     const category = categoryFilter.val();
@@ -146,6 +186,7 @@ jQuery(function ($) {
     body.empty();
     filtered.forEach(item => {
       const actions = element('td', '', { class: 'actions' });
+      actions.append(button('編集', () => openEditor(item), 'button quiet'), button('削除', () => openDelete(item), 'button quiet delete-link'));
       body.append(element('tr').append(
         element('td', item.name, { class: 'equipment-name' }), element('td', item.category),
         element('td', String(item.quantity), { class: 'quantity' }),
