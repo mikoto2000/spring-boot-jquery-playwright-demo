@@ -145,6 +145,55 @@ npm run test:e2e:all
 
 Chromium・Firefox・WebKit で同じテストを実行します。Firefox のこの環境での起動制約は「実行確認結果」を参照してください。
 
+## GitHub Actions で E2E を自動実行
+
+[Playwright E2E ワークフロー](https://github.com/mikoto2000/spring-boot-jquery-playwright-demo/actions/workflows/e2e.yml) は `.github/workflows/e2e.yml` に定義しています。
+
+次のタイミングで実行します。
+
+- `main` ブランチへの push
+- `main` ブランチを対象とする Pull Request の作成・更新
+- Actions 画面からの手動実行（`Run workflow`）
+
+Ubuntu 24.04 / Temurin JDK 25 / Node.js 24 で依存関係とブラウザをインストールし、Spring Boot をビルドした後に `npm run test:e2e:all` を実行します。Chromium・Firefox・WebKit で各8件、計24件を検証します。Spring Boot のテスト用サーバーは Playwright が自動起動・停止します。追加の Secrets 設定は不要です。
+
+CI では既存設定により、テストを1ワーカーで実行し、失敗時は1回リトライします。同じブランチの新しい実行が始まると、古い実行はキャンセルします。
+
+### スクリーンショット付きレポートをダウンロード
+
+1. GitHub リポジトリの **Actions → Playwright E2E** を開く。
+2. 確認したい実行を選び、ジョブが終了するまで待つ。
+3. 実行の概要画面の **Artifacts** から **playwright-report** をダウンロードする（GitHub へのログインが必要）。
+4. ZIP を展開し、`index.html` と `data/` が入ったフォルダを確認する。
+5. このプロジェクトのルートから、次のコマンドで展開先を指定する。
+
+```powershell
+# 初回のみ、プロジェクトの依存関係を準備
+npm ci
+
+# パスは ZIP の展開先に置き換える（既存のローカルレポートとは別の場所を推奨）
+npx playwright show-report "C:\Downloads\playwright-report"
+```
+
+macOS / Linux でも、展開先のパスを指定して同じコマンドで開けます。ダウンロードしたレポートの閲覧に Spring Boot の起動やテストの再実行は不要です。
+
+HTML レポートでテストを選ぶと、各ステップのスクリーンショットを確認できます。画像を参照するため、`index.html` と `data/` を一緒に保管してください。
+
+レポートはテスト成功時・失敗時ともにアップロードし、**14日間**保存します。失敗時は途中まで成功したステップの画像と、失敗時画像・動画・トレースもレポートから確認できます。依存関係のインストールやビルドの失敗でテストを開始できなかった場合はレポートが生成されないため、ジョブログを確認してください。キャンセルされた実行のアップロードはスキップします。
+
+### 手動実行
+
+**Actions → Playwright E2E → Run workflow** でブランチを選び、実行できます。GitHub CLI を使う場合は次のコマンドでも実行できます。
+
+```powershell
+gh workflow run e2e.yml --ref main
+gh run list --workflow e2e.yml
+
+# 実行 ID は上の一覧から選ぶ
+gh run download <実行ID> --name playwright-report --dir ./downloaded-report
+npx playwright show-report ./downloaded-report
+```
+
 ## 検証する振る舞い
 
 1. 初期一覧、名前検索、カテゴリ絞り込み、該当なし、検索条件クリア
